@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ShinChan Typing Game</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="fount.css" rel="stylesheet">
+  <link href="index.css" rel="stylesheet">
+</head>
+<body>
+  <div class="bg-wrap">
+    <div class="stars"></div>
+    <div class="shinchan" aria-hidden="true"></div>
+  </div>
+  <canvas class="confetti" id="confetti"></canvas>
+
+  <div class="container">
+    <div class="card" role="application" aria-label="ShinChan Typing Game">
+      <div class="header">
+        <div class="logo">SC</div>
+        <div class="title">ShinChan Typing Game <span style="font-size:14px;color:var(--muted);font-weight:700">—
+            type fast, stay silly!</span></div>
+      </div>
+
+      <div class="bar" id="statusBar">
+        <div class="chip" title="Time left">
+          <span class="dot" style="background:var(--accent)"></span>
+          <strong id="time">60</strong> sec
+        </div>
+        <div class="chip" title="Your current score">
+          <span class="dot" style="background:var(--good)"></span>
+          <strong id="score">0</strong> pts
+        </div>
+        <div class="chip" title="Accuracy">
+          <span class="dot" style="background:var(--accent2)"></span>
+          <strong id="accuracy">100</strong>% acc
+        </div>
+        <div class="chip" title="Combo multiplier">
+          Combo × <strong id="combo">1</strong>
+        </div>
+        <div class="chip" title="High score stored in your browser">
+          High: <strong id="high">0</strong>
+        </div>
+        <div class="chip toggle" title="Mute or unmute sounds">
+          <input id="soundToggle" type="checkbox" checked aria-label="Sound effects on/off">
+          <span>Sound</span>
+        </div>
+      </div>
+
+      <div class="main">
+        <div class="playzone">
+          <div class="toasts">
+            <div class="toast" id="toast">Let's go! ✨</div>
+          </div>
+          <div class="word" id="word" aria-live="polite"></div>
+          <input class="input" id="input" type="text" placeholder="Type here…" autocomplete="off" spellcheck="false" />
+          <div class="controls">
+            <button id="startBtn" aria-label="Start or restart the game">▶ Start</button>
+            <button id="skipBtn" class="secondary" aria-label="Skip this word (penalty)">⏭ Skip (−3s)</button>
+            <button id="hintBtn" class="ghost" aria-label="Hint the next character">💡 Hint</button>
+
+            <select id="difficulty" class="ghost" aria-label="Select difficulty"
+              style="padding:10px 12px; border-radius:12px; background:var(--glass); color:var(--white); border:1px solid rgba(255,255,255,.16)">
+              <option value="easy">Easy</option>
+              <option value="medium" selected>Medium</option>
+              <option value="hard">Hard</option>
+              <option value="quotes">Quotes</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="side">
+          <div class="panel">
+            <h3>How to play</h3>
+            <div class="stat">Type the word/sentence shown. Press <strong>Enter</strong> to submit.</div>
+            <div class="stat">Correct = + points & time bonus. Wrong = combo breaks.</div>
+            <div class="stat">Skip costs 3 seconds. Hint shows the next char.</div>
+          </div>
+          <div class="panel">
+            <h3>Live stats</h3>
+            <div class="stat"><span>Words typed</span><span class="big" id="words">0</span></div>
+            <div class="stat"><span>Best combo</span><span class="big" id="bestCombo">0</span></div>
+            <div class="stat"><span>Keystrokes</span><span id="keys">0</span></div>
+            <div class="stat"><span>Mistakes</span><span id="mistakes">0</span></div>
+          </div>
+          <div class="panel">
+            <h3>ShinChan says…</h3>
+            <div id="coach">Type like a ninja! 🥷</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        Type like Shinchan chasing candy! Fast fingers, sharp mind! Beat the clock, break records, laugh loud, win big — you're unstoppable! Go go go, typing champ!
+      </div>
+    </div>
+  </div>
+
+  <audio id="sfx-correct" preload="auto"></audio>
+  <audio id="sfx-wrong" preload="auto"></audio>
+  <audio id="sfx-start" preload="auto"></audio>
+  <audio id="sfx-level" preload="auto"></audio>
+
+  <script>
+    // ---------- Word banks ----------
+    const WORDS = {
+      easy: ["apple", "robot", "dance", "happy", "pencil", "panda", "zigzag", "school", "friend", "smile", "cookie", "banana", "guitar", "rocket", "pillow", "purple", "turtle", "butter", "window", "planet"],
+      medium: ["javascript", "animation", "developer", "challenge", "keyboard", "algorithm", "interface", "character", "reactive", "variable", "function", "container", "database", "framework", "iteration", "performance", "aesthetic", "translate", "adventure", "hilarious"],
+      hard: ["synchronization", "characterization", "extraordinary", "responsiveness", "mischaracterize", "electromagnetism", "incomprehensible", "microarchitecture", "interoperability", "photosynthesize", "instrumentation", "cryptographically", "disproportionate", "miscommunication", "hyperparameter"],
+      quotes: [
+        "Be curious, not judgmental.",
+        "Code is like humor.",
+        "Talk is cheap. Show me the code.",
+        "Stay hungry. Stay foolish.",
+        "First, solve the problem."
+      ]
+    };
+
+    // ---------- Game state ----------
+    const el = (id) => document.getElementById(id);
+    const input = el('input');
+    const wordEl = el('word');
+    const timeEl = el('time');
+    const scoreEl = el('score');
+    const accEl = el('accuracy');
+    const comboEl = el('combo');
+    const wordsEl = el('words');
+    const bestComboEl = el('bestCombo');
+    const keysEl = el('keys');
+    const mistakesEl = el('mistakes');
+    const highEl = el('high');
+    const toast = el('toast');
+    const coach = el('coach');
+
+    let current = '';
+    let shownIndex = 0;
+    let timer = 60; // seconds
+    let interval = null;
+    let running = false;
+
+    let score = 0, words = 0, combo = 0, bestCombo = 0, keys = 0, mistakes = 0, correctKeys = 0;
+
+    // High score
+    const HIGH_KEY = 'shinchan-typing-highscore-v1';
+    const savedHigh = Number(localStorage.getItem(HIGH_KEY) || 0);
+    highEl.textContent = savedHigh;
+
+    // ---------- Sounds (WebAudio generated & piped into <audio>) ----------
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    function tone(freq = 440, dur = 0.08, type = 'sine', gain = 0.03) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = type; o.frequency.value = freq; g.gain.value = gain; o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + dur);
+    }
+    function chord(freqs = [330, 440, 550], dur = 0.2) { freqs.forEach((f, i) => setTimeout(() => tone(f, dur, 'sine', 0.03), i * 10)); }
+
+    function play(elId, fallback) {
+      if (!el('soundToggle').checked) return;
+      try { fallback(); } catch { /* ignore */ }
+    }
+
+    // Prime basic events
+    el('sfx-correct').addEventListener('play', () => { });
+
+    // ---------- Utilities ----------
+    function randomFrom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+    function setToast(msg) { toast.textContent = msg; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 1200); }
+
+    function setCoach(msg) {
+      coach.textContent = msg; if ('speechSynthesis' in window && el('soundToggle').checked) {
+        const u = new SpeechSynthesisUtterance(msg); u.rate = 1.05; u.pitch = 1.2; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
+      }
+    }
+
+    function renderWord() {
+      const typed = input.value;
+      let html = '';
+      for (let i = 0; i < current.length; i++) {
+        const ch = current[i];
+        if (i < typed.length) {
+          html += `<span class="${typed[i] === ch ? 'done' : 'wrong'}">${ch}</span>`;
+        } else {
+          html += `<span class="todo">${ch}</span>`;
+        }
+      }
+      wordEl.innerHTML = html;
+    }
+
+    function pickWord() {
+      const mode = el('difficulty').value;
+      current = randomFrom(WORDS[mode]);
+      input.value = '';
+      renderWord();
+    }
+
+    function reset() {
+      running = false; clearInterval(interval); interval = null;
+      timer = 60; score = 0; words = 0; combo = 0; bestCombo = 0; keys = 0; mistakes = 0; correctKeys = 0; shownIndex = 0;
+      updateUI();
+      pickWord();
+    }
+
+    function start() {
+      if (running) return; running = true;
+      setToast('Go! ✨'); setCoach("ShinChan: Ganbatte! 💪");
+      play('sfx-start', () => chord([392, 523, 659], .22));
+      interval = setInterval(() => {
+        timer--; if (timer <= 0) { timer = 0; end(); } updateUI();
+      }, 1000);
+      input.focus();
+    }
+
+    function end() {
+      running = false; clearInterval(interval); interval = null; input.blur();
+      const acc = accuracy();
+      const msg = acc > 95 ? "Legendary typing! 🏆" : acc > 85 ? "Fantastic! 🌟" : acc > 70 ? "Great job! 💫" : "Nice try — keep practicing!";
+      setCoach(msg + ` Score ${score}.`);
+      if (score > Number(localStorage.getItem(HIGH_KEY) || 0)) {
+        localStorage.setItem(HIGH_KEY, String(score));
+        highEl.textContent = score;
+        setToast('New High Score! 🥳');
+        burstConfetti();
+      }
+    }
+
+    function submit() {
+      if (!running) return;
+      const typed = input.value;
+      if (typed.trim() === current) {
+        correctKeys += typed.length;
+        words++; combo++; bestCombo = Math.max(bestCombo, combo);
+        const bonus = 3 + Math.min(5, Math.floor(current.length / 5));
+        timer = Math.min(120, timer + 1 + Math.floor(combo / 5));
+        score += 10 + current.length + (combo * 2);
+        setToast(combo >= 10 ? `Combo x${combo}! 🔥` : 'Nice! ✅');
+        setCoach(randomFrom([
+          "Boogie dance! You're fast! 🕺",
+          "Chocolate time after this! 🍫",
+          "Ultra-speed mode! ⚡",
+          "You type like a hero! 🦸",
+          "Nailed it! High five! 🙌"
+        ]));
+        play('sfx-correct', () => chord([523, 659, 784], .15));
+        pickWord();
+      } else {
+        mistakes++; combo = 0; setToast('Oops! ❌');
+        setCoach("ShinChan: Almost! Try again! ✨");
+        play('sfx-wrong', () => tone(180, .12, 'square', .04));
+      }
+      updateUI();
+      renderWord();
+    }
+
+    function hint() {
+      if (!running) return; const typed = input.value;
+      if (current.startsWith(typed)) {
+        const next = current[typed.length] || '';
+        input.value = typed + next;
+        renderWord();
+      }
+    }
+
+    function accuracy() {
+      const total = Math.max(1, keys);
+      return Math.round((correctKeys / total) * 100);
+    }
+
+    function updateUI() {
+      timeEl.textContent = String(timer);
+      scoreEl.textContent = String(score);
+      wordsEl.textContent = String(words);
+      comboEl.textContent = String(combo);
+      bestComboEl.textContent = String(bestCombo);
+      keysEl.textContent = String(keys);
+      mistakesEl.textContent = String(mistakes);
+      accEl.textContent = String(accuracy());
+    }
+
+    // ---------- Events ----------
+    el('startBtn').addEventListener('click', () => { reset(); start(); });
+    el('skipBtn').addEventListener('click', () => { if (!running) return; timer = Math.max(0, timer - 3); pickWord(); updateUI(); setToast('Skipped −3s ⏱'); });
+    el('hintBtn').addEventListener('click', hint);
+    el('difficulty').addEventListener('change', () => { pickWord(); setToast('Difficulty changed'); input.focus(); });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submit(); return; }
+      // count keystrokes and give tiny key tone
+      if (e.key.length === 1) { keys++; play('key', () => tone(420 + Math.random() * 60, .03, 'triangle', .015)); updateUI(); }
+    });
+    input.addEventListener('input', () => { renderWord(); });
+
+    // Accessibility: start with Space/Enter when focused on body
+    document.addEventListener('keydown', (e) => {
+      if ((e.key === ' ' || e.key === 'Enter') && !running) { e.preventDefault(); start(); }
+    });
+
+    // ---------- Confetti (simple canvas) ----------
+    const c = el('confetti');
+    const ctx2 = c.getContext('2d');
+    let confettiPieces = [];
+    function resize() { c.width = window.innerWidth; c.height = window.innerHeight; }
+    window.addEventListener('resize', resize); resize();
+    function burstConfetti() {
+      for (let i = 0; i < 140; i++) {
+        confettiPieces.push({ x: Math.random() * c.width, y: -10, s: 4 + Math.random() * 6, v: 2 + Math.random() * 3, r: Math.random() * Math.PI });
+      }
+    }
+    function drawConfetti() {
+      ctx2.clearRect(0, 0, c.width, c.height);
+      ctx2.save();
+      confettiPieces.forEach(p => {
+        p.y += p.v; p.r += 0.05; ctx2.translate(p.x, p.y); ctx2.rotate(p.r);
+        ctx2.fillStyle = `hsl(${Math.random() * 360}, 90%, 60%)`;
+        ctx2.fillRect(-p.s / 2, -p.s / 2, p.s, p.s);
+        ctx2.setTransform(1, 0, 0, 1, 0, 0);
+      });
+      confettiPieces = confettiPieces.filter(p => p.y < c.height + 20);
+      ctx2.restore();
+      requestAnimationFrame(drawConfetti);
+    }
+    drawConfetti();
+    // Init
+    reset();
+  </script>
+</body>
+
+</html>
